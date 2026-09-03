@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getSeatStates } from "@/lib/sensor/store";
+import { listSeatStates } from "@/lib/sensor/repository";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -19,11 +19,21 @@ export async function GET(request: Request) {
     }
   }
 
-  const seats = getSeatStates(carNumber);
-  return NextResponse.json({
-    ok: true,
-    carNumber: carNumber ?? null,
-    count: seats.length,
-    seats,
-  });
+  try {
+    const seats = await listSeatStates(carNumber);
+    return NextResponse.json({
+      ok: true,
+      carNumber: carNumber ?? null,
+      count: seats.length,
+      seats,
+    });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error: "DATABASE_UNAVAILABLE",
+        message: error instanceof Error ? error.message : "Unknown database error",
+      },
+      { status: 503 },
+    );
+  }
 }

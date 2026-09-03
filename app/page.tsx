@@ -17,11 +17,7 @@ type Seat = {
   source: "simulation" | "sensor";
 };
 
-type TrainCar = {
-  carNumber: number;
-  seats: Seat[];
-};
-
+type TrainCar = { carNumber: number; seats: Seat[] };
 type ApiSeat = {
   seatId: string;
   carNumber: number;
@@ -53,9 +49,9 @@ const buildSeats = (carNumber: number): Seat[] =>
   });
 
 const initialTrain = (): TrainCar[] =>
-  Array.from({ length: CAR_COUNT }, (_, carIndex) => ({
-    carNumber: carIndex + 1,
-    seats: buildSeats(carIndex + 1),
+  Array.from({ length: CAR_COUNT }, (_, index) => ({
+    carNumber: index + 1,
+    seats: buildSeats(index + 1),
   }));
 
 function mergeSensorSeats(currentTrain: TrainCar[], apiSeats: ApiSeat[]) {
@@ -64,13 +60,14 @@ function mergeSensorSeats(currentTrain: TrainCar[], apiSeats: ApiSeat[]) {
     ...car,
     seats: car.seats.map((seat) => {
       const sensorSeat = byId.get(seat.id);
-      if (!sensorSeat) return seat;
-      return {
-        ...seat,
-        weight: sensorSeat.weight,
-        updatedAt: sensorSeat.updatedAt,
-        source: "sensor" as const,
-      };
+      return sensorSeat
+        ? {
+            ...seat,
+            weight: sensorSeat.weight,
+            updatedAt: sensorSeat.updatedAt,
+            source: "sensor" as const,
+          }
+        : seat;
     }),
   }));
 }
@@ -82,7 +79,7 @@ export default function Home() {
   const [selectedStation, setSelectedStation] = useState(lineConfigs[4].defaultStation);
   const [threshold, setThreshold] = useState(DEFAULT_THRESHOLD);
   const [isLive, setIsLive] = useState(true);
-  const [currentTime, setCurrentTime] = useState("");
+  const [currentTime, setCurrentTime] = useState(nowTime);
   const [lastReceivedAt, setLastReceivedAt] = useState<string | null>(null);
   const [dataMode, setDataMode] = useState<"sensor" | "simulation">("simulation");
   const [apiMessage, setApiMessage] = useState("D1 센서 데이터 대기 중");
@@ -97,25 +94,18 @@ export default function Home() {
       : "없음";
 
   useEffect(() => {
-    setSelectedStation(selectedLineConfig.defaultStation);
-  }, [selectedLineConfig.defaultStation]);
-
-  useEffect(() => {
-    setCurrentTime(nowTime());
     const clock = window.setInterval(() => setCurrentTime(nowTime()), 1000);
     return () => window.clearInterval(clock);
   }, []);
 
   useEffect(() => {
     if (!isLive) return;
-
     let cancelled = false;
 
     const poll = async () => {
       try {
         const response = await fetch("/api/seats", { cache: "no-store" });
         if (!response.ok) throw new Error(`seat API ${response.status}`);
-
         const payload = (await response.json()) as { seats?: ApiSeat[] };
         const seats = Array.isArray(payload.seats) ? payload.seats : [];
         if (cancelled || seats.length === 0) return;
@@ -145,8 +135,7 @@ export default function Home() {
 
   useEffect(() => {
     if (!isLive || dataMode === "sensor") return;
-
-    const interval = window.setInterval(() => {
+    const timer = window.setInterval(() => {
       setTrain((currentTrain) => {
         const carIndex = Math.floor(Math.random() * currentTrain.length);
         const seatIndex = Math.floor(Math.random() * SEATS_PER_CAR);
@@ -156,7 +145,6 @@ export default function Home() {
         }));
         const seat = nextTrain[carIndex].seats[seatIndex];
         const shouldOccupy = seat.weight >= threshold ? Math.random() > 0.22 : Math.random() > 0.48;
-
         seat.weight = shouldOccupy
           ? Math.round(38 + Math.random() * 42)
           : Math.round(Math.random() * Math.max(6, threshold - 6));
@@ -165,26 +153,21 @@ export default function Home() {
         return nextTrain;
       });
     }, 1500);
-
-    return () => window.clearInterval(interval);
+    return () => window.clearInterval(timer);
   }, [dataMode, isLive, threshold]);
 
-  const allMetricSeats = useMemo(
-    () =>
-      train.flatMap((car) =>
-        car.seats.map((seat) => ({ carNumber: car.carNumber, weight: seat.weight })),
-      ),
+  const metricSeats = useMemo(
+    () => train.flatMap((car) => car.seats.map((seat) => ({ carNumber: car.carNumber, weight: seat.weight }))),
     [train],
   );
-
   const carSummaries = useMemo(
-    () => summarizeCars(allMetricSeats, CAR_COUNT, SEATS_PER_CAR, threshold),
-    [allMetricSeats, threshold],
+    () => summarizeCars(metricSeats, CAR_COUNT, SEATS_PER_CAR, threshold),
+    [metricSeats, threshold],
   );
   const bestCar = useMemo(() => chooseBestCar(carSummaries), [carSummaries]);
   const car = train[selectedCar - 1] ?? train[0];
   const selectedStats = carSummaries[selectedCar - 1];
-  const totalVacancy = carSummaries.reduce((sum, item) => sum + item.empty, 0);
+  const totalVacancy = carSummaries.reduce((sum, summary) => sum + summary.empty, 0);
   const gatewayStatus = getGatewayStatus(lastReceivedAt);
   const gatewayLabel = {
     waiting: "센서 대기",
@@ -192,6 +175,11 @@ export default function Home() {
     stale: "센서 수신 지연",
     error: "센서 시간 오류",
   }[gatewayStatus];
+
+  const selectLine = (lineKey: LineKey) => {
+    setSelectedLine(lineKey);
+    setSelectedStation(lineConfigs[lineKey].defaultStation);
+  };
 
   const toggleSeat = (seatId: string) => {
     if (dataMode === "sensor") return;
@@ -219,6 +207,26 @@ export default function Home() {
     );
   };
 
+  const renderSeatRow = (row: "left" | "right") => (
+    <div className="seat-row" aria-label={row === "left" ? "왼쪽 좌석" : "오른쪽 좌석"}>
+      {car.seats.filter((seat) => seat.row === row).map((seat) => {
+        const occupied = seat.weight >= threshold;
+        return (
+          <button
+            className={occupied ? "seat occupied" : "seat empty"}
+            key={seat.id}
+            onClick={() => toggleSeat(seat.id)}
+            type="button"
+            aria-label={`${seat.index}번 좌석, ${occupied ? "점유" : "비어 있음"}, ${seat.weight}kg`}
+          >
+            <span>{seat.index}</span>
+            <small>{seat.weight}kg</small>
+          </button>
+        );
+      })}
+    </div>
+  );
+
   return (
     <main className="app-shell">
       <header className={`topbar line-${selectedLine}`}>
@@ -226,17 +234,16 @@ export default function Home() {
           <div className="line-switcher" role="tablist" aria-label="지하철 호선 선택">
             {(Object.keys(lineConfigs) as string[]).map((key) => {
               const lineKey = Number(key) as LineKey;
-              const config = lineConfigs[lineKey];
               return (
                 <button
-                  key={config.name}
+                  key={lineKey}
                   type="button"
                   className={selectedLine === lineKey ? `line-chip active line-${lineKey}` : `line-chip line-${lineKey}`}
-                  onClick={() => setSelectedLine(lineKey)}
+                  onClick={() => selectLine(lineKey)}
                   role="tab"
                   aria-selected={selectedLine === lineKey}
                 >
-                  {config.name}
+                  {lineConfigs[lineKey].name}
                 </button>
               );
             })}
@@ -314,28 +321,9 @@ export default function Home() {
 
           <div className="train-car-frame">
             <div className="door-line" aria-hidden="true"><span>출입문</span><span>통로</span><span>출입문</span></div>
-            {(["left", "right"] as const).map((row, rowIndex) => (
-              <div key={row}>
-                {rowIndex === 1 ? <div className="aisle"><span>게이트웨이 ESP32-CAR-{selectedCar} · {gatewayLabel}</span></div> : null}
-                <div className="seat-row" aria-label={row === "left" ? "왼쪽 좌석" : "오른쪽 좌석"}>
-                  {car.seats.filter((seat) => seat.row === row).map((seat) => {
-                    const occupied = seat.weight >= threshold;
-                    return (
-                      <button
-                        className={occupied ? "seat occupied" : "seat empty"}
-                        key={seat.id}
-                        onClick={() => toggleSeat(seat.id)}
-                        type="button"
-                        aria-label={`${seat.index}번 좌석, ${occupied ? "점유" : "비어 있음"}, ${seat.weight}kg`}
-                      >
-                        <span>{seat.index}</span>
-                        <small>{seat.weight}kg</small>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
+            {renderSeatRow("left")}
+            <div className="aisle"><span>게이트웨이 ESP32-CAR-{selectedCar} · {gatewayLabel}</span></div>
+            {renderSeatRow("right")}
           </div>
 
           <div className="legend" aria-label="범례">
@@ -363,7 +351,10 @@ export default function Home() {
             <small>{lastReceivedAt ? `마지막 수신 ${new Date(lastReceivedAt).toLocaleTimeString("ko-KR")}` : "실제 센서 이벤트 없음"}</small>
           </div>
           <div className="system-flow" aria-label="데이터 흐름">
-            <div>좌석 압력센서</div><div>ESP32 게이트웨이</div><div>Sensor API + D1</div><div>MetroSeat UI</div>
+            <div>좌석 압력센서</div>
+            <div>ESP32 게이트웨이</div>
+            <div>Sensor API + D1</div>
+            <div>MetroSeat UI</div>
           </div>
         </aside>
       </section>

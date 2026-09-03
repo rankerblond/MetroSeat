@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { persistSeatState } from "@/lib/sensor/repository";
 import { ingestSensorEvent } from "@/lib/sensor/store";
 import type { SensorEvent } from "@/lib/sensor/types";
 
@@ -26,14 +27,19 @@ export async function POST(request: Request) {
       timestamp: payload.timestamp,
     });
 
+    await persistSeatState(state);
+
     return NextResponse.json({ ok: true, seat: state }, { status: 201 });
   } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    const isDatabaseError = message.includes("D1 binding");
+
     return NextResponse.json(
       {
-        error: "SENSOR_INGEST_FAILED",
-        message: error instanceof Error ? error.message : "Unknown error",
+        error: isDatabaseError ? "DATABASE_UNAVAILABLE" : "SENSOR_INGEST_FAILED",
+        message,
       },
-      { status: 400 },
+      { status: isDatabaseError ? 503 : 400 },
     );
   }
 }

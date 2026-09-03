@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { integer, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
 export const sensorEvents = sqliteTable("sensor_events", {
@@ -9,7 +10,7 @@ export const sensorEvents = sqliteTable("sensor_events", {
   weight: real("weight").notNull(),
   occupied: integer("occupied", { mode: "boolean" }).notNull(),
   timestamp: text("timestamp").notNull(),
-  createdAt: text("created_at").notNull().default("CURRENT_TIMESTAMP"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 
 export const seatStates = sqliteTable("seat_states", {

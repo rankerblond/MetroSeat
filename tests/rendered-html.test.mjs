@@ -25,17 +25,18 @@ async function render() {
   );
 }
 
-test("server-renders the MetroSeat prototype", async () => {
+test("server-renders the MetroSeat MVP dashboard", async () => {
   const response = await render();
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
 
   const html = await response.text();
   assert.match(html, /<title>MetroSeat<\/title>/i);
-  assert.match(html, /지하철 좌석 점유 모니터링/);
-  assert.match(html, /2호선 내선 2137편성/);
-  assert.match(html, /센서 시뮬레이터/);
+  assert.match(html, /좌석 점유 모니터링 MVP/);
+  assert.match(html, /차량별 혼잡도/);
+  assert.match(html, /센서 게이트웨이/);
   assert.match(html, /착석 판단 임계값/);
+  assert.match(html, /추천 차량/);
   assert.doesNotMatch(html, /Your site is taking shape|react-loading-skeleton/);
 });
 
@@ -50,6 +51,7 @@ test("keeps the finished app free of starter preview code", async () => {
   assert.match(page, /MetroSeat/);
   assert.match(page, /threshold/);
   assert.match(page, /toggleSeat/);
+  assert.match(page, /\/api\/seats/);
   assert.match(layout, /title:\s*"MetroSeat"/);
   assert.match(css, /\.seat\.empty/);
   assert.match(css, /\.seat\.occupied/);
